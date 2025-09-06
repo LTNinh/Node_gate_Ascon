@@ -1,0 +1,210 @@
+from machine import UART, ADC, Pin
+import dht
+import time
+from ascon import ascon_encrypt
+import os
+
+# Initialize variables with default value of 0
+light = 0
+motion = 0
+temperature = 0
+humidity = 0
+latitude = 0.0
+longitude = 0.0
+
+# Initialize array to store hex values (without 0x prefix)
+hex_values = ['00', '00', '00', '00', '00', '00', '00', '00', '00', '00', '00', '00']
+# [ánh sáng, chuyển động, nhiệt độ, độ ẩm, vĩ độ(độ phút giây hướng), kinh độ(độ phút giây hướng)]
+
+# Khởi tạo cảm biến ánh sáng GPIO34
+adc_pin = ADC(Pin(34))
+adc_pin.atten(ADC.ATTN_11DB)     # Cho phép đọc tới ~3.3V
+adc_pin.width(ADC.WIDTH_12BIT)   # Độ phân giải 12-bit (0 - 4095)
+
+# Khởi tạo cảm biến chuyển động GPIO5
+digital_pin = Pin(5, Pin.IN)
+
+# Khởi tạo cảm biến DHT22 tại GPIO32
+dht_sensor = dht.DHT22(Pin(32))
+
+# Khởi tạo UART1 với TX=17, RX=16, baudrate 115200
+uart1 = UART(1, baudrate=115200, tx=Pin(17), rx=Pin(16))
+
+# Thông tin đầu vào cho mã hóa
+key_hex = "000102030405060708090A0B0C0D0E0F"
+ad_hex  = "303132333435363738393A3B3C3D3E3F"
+
+# Chuyển sang byte
+key = bytes.fromhex(key_hex)
+ad = bytes.fromhex(ad_hex)
+
+# Cache frequently used functions and values
+hex = hex
+ord = ord
+fromhex = bytes.fromhex
+ticks_ms = time.ticks_ms
+ticks_diff = time.ticks_diff
+
+def nmea_to_decimal(degree_min, direction):
+    if not degree_min or not direction:
+        return None
+    try:
+        if direction in ['N', 'S']:
+            d = int(degree_min[:2])
+            m = float(degree_min[2:])
+        else:
+            d = int(degree_min[:3])
+            m = float(degree_min[3:])
+        decimal = d + m/60
+        if direction in ['S', 'W']:
+            decimal = -decimal
+        return decimal
+    except:
+        return None
+
+def decimal_to_dms(deg):
+    d = int(abs(deg))
+    m_float = (abs(deg) - d) * 60
+    m = int(m_float)
+    s = int((m_float - m) * 60)  # Làm tròn giây thành số nguyên
+    return d, m, s
+
+uart = UART(2, baudrate=38400, tx=18, rx=19)
+print("Đang xử lý tín hiệu GPS:")
+
+def read_sensors():
+    global light, motion, temperature, humidity, hex_values
+    # Read ADC and scale light from 0-4095 to 0-255
+    light_raw = adc_pin.read()
+    light = int((light_raw / 4095) * 255)  # Scale to 0-255
+    motion = digital_pin.value()
+    try:
+        dht_sensor.measure()
+        temperature = int(dht_sensor.temperature())  # Làm tròn nhiệt độ
+        humidity = int(dht_sensor.humidity())        # Làm tròn độ ẩm
+    except Exception as e:
+        print("Lỗi đọc DHT22:", e)
+    # Update hex_values array with sensor data (without 0x prefix, 2 chars)
+    hex_light = hex(light)[2:].upper()
+    hex_light = '0' + hex_light if len(hex_light) == 1 else hex_light
+    hex_motion = hex(motion)[2:].upper()
+    hex_motion = '0' + hex_motion if len(hex_motion) == 1 else hex_motion
+    hex_temp = hex(temperature)[2:].upper()
+    hex_temp = '0' + hex_temp if len(hex_temp) == 1 else hex_temp
+    hex_hum = hex(humidity)[2:].upper()
+    hex_hum = '0' + hex_hum if len(hex_hum) == 1 else hex_hum
+    hex_values[0] = hex_light
+    hex_values[1] = hex_motion
+    hex_values[2] = hex_temp
+    hex_values[3] = hex_hum
+    print("Ánh sáng: {} (Hex: {})".format(light, hex(light).upper()))
+    print("Chuyển động: {} (Hex: {})".format(motion, '0x' + hex_motion))
+    print("Nhiệt độ: {}°C (Hex: {})".format(temperature, hex(temperature).upper()))
+    print("Độ ẩm: {}% (Hex: {})".format(humidity, hex(humidity).upper()))
+
+def parse_gps(line):
+    global latitude, longitude, hex_values
+    try:
+        line = line.decode('utf-8').strip()
+        if line.startswith('$GNGLL') or line.startswith('$GPGLL'):
+            parts = line.split(',')
+            if len(parts) >= 5 and parts[1] and parts[3]:  # Check for valid data
+                lat = nmea_to_decimal(parts[1], parts[2])
+                lon = nmea_to_decimal(parts[3], parts[4])
+                if lat is not None and lon is not None:
+                    latitude = lat
+                    longitude = lon
+                    lat_d, lat_m, lat_s = decimal_to_dms(lat)
+                    lon_d, lon_m, lon_s = decimal_to_dms(lon)
+                    lat_dir = 'N' if lat >= 0 else 'S'
+                    lon_dir = 'E' if lon >= 0 else 'W'
+                    # Convert directions to hex (ASCII values)
+                    lat_dir_hex = hex(ord(lat_dir))[2:].upper()
+                    lat_dir_hex = '0' + lat_dir_hex if len(lat_dir_hex) == 1 else lat_dir_hex
+                    lon_dir_hex = hex(ord(lon_dir))[2:].upper()
+                    lon_dir_hex = '0' + lon_dir_hex if len(lon_dir_hex) == 1 else lon_dir_hex
+                    # Update hex_values array with GPS data (without 0x prefix, 2 chars)
+                    hex_lat_d = hex(lat_d)[2:].upper()
+                    hex_lat_d = '0' + hex_lat_d if len(hex_lat_d) == 1 else hex_lat_d
+                    hex_lat_m = hex(lat_m)[2:].upper()
+                    hex_lat_m = '0' + hex_lat_m if len(hex_lat_m) == 1 else hex_lat_m
+                    hex_lat_s = hex(lat_s)[2:].upper()
+                    hex_lat_s = '0' + hex_lat_s if len(hex_lat_s) == 1 else hex_lat_s
+                    hex_lon_d = hex(lon_d)[2:].upper()
+                    hex_lon_d = '0' + hex_lon_d if len(hex_lon_d) == 1 else hex_lon_d
+                    hex_lon_m = hex(lon_m)[2:].upper()
+                    hex_lon_m = '0' + hex_lon_m if len(hex_lon_m) == 1 else hex_lon_m
+                    hex_lon_s = hex(lon_s)[2:].upper()
+                    hex_lon_s = '0' + hex_lon_s if len(hex_lon_s) == 1 else hex_lon_s
+                    hex_values[4] = hex_lat_d
+                    hex_values[5] = hex_lat_m
+                    hex_values[6] = hex_lat_s
+                    hex_values[7] = lat_dir_hex
+                    hex_values[8] = hex_lon_d
+                    hex_values[9] = hex_lon_m
+                    hex_values[10] = hex_lon_s
+                    hex_values[11] = lon_dir_hex
+                    print("Vĩ độ  : {}°{}'{}\"{} (Hex: {}°{}'{}\"{})".format(
+                        lat_d, lat_m, lat_s, lat_dir,
+                        hex(lat_d).upper(), hex(lat_m).upper(), hex(lat_s).upper(), '0x' + lat_dir_hex))
+                    print("Kinh độ: {}°{}'{}\"{} (Hex: {}°{}'{}\"{})".format(
+                        lon_d, lon_m, lon_s, lon_dir,
+                        hex(lon_d).upper(), hex(lon_m).upper(), hex(lon_s).upper(), '0x' + lon_dir_hex))
+    except UnicodeError:
+        pass
+
+while True:
+    read_sensors()
+    if uart.any():
+        parse_gps(uart.readline())
+    # Get the concatenated hex array as plaintext
+    plaintext_hex = "".join(hex_values)
+    try:
+        plaintext = fromhex(plaintext_hex)
+    except ValueError as e:
+        print("Lỗi chuyển hex sang bytes:", e)
+        plaintext = b""
+    # Tạo nonce ngẫu nhiên
+    nonce = os.urandom(16)
+    nonce_hex = nonce.hex()
+    # Mã hóa và đo thời gian
+    try:
+        start_time = ticks_ms()
+        ciphertext_and_tag = ascon_encrypt(key, nonce, ad, plaintext)
+        end_time = ticks_ms()
+        encrypt_time_ms = (ticks_diff(end_time, start_time)-23)
+        encrypt_time_s = (encrypt_time_ms/1000000)
+        plaintext_size_bytes = len(plaintext)
+        if encrypt_time_s > 0:
+            speed_mbps = (plaintext_size_bytes * 0.000008) / encrypt_time_s
+            print("Kích thước plaintext:", plaintext_size_bytes, "bytes")
+            print("Thời gian mã hóa:", encrypt_time_ms, "us")
+            print("Tốc độ mã hóa:", speed_mbps, "MB/s")
+        else:
+            print("Thời gian mã hóa quá nhỏ để đo chính xác!")
+        ciphertext = ciphertext_and_tag[:-16]
+        tag = ciphertext_and_tag[-16:]
+        # Gửi từng phần qua UART1 với độ trễ
+        uart1.write(nonce_hex.encode('utf-8'))
+        time.sleep(0.1)
+        uart1.write(b"\n")
+        time.sleep(0.1)
+        uart1.write(ciphertext.hex().encode('utf-8'))
+        time.sleep(0.1)
+        uart1.write(b"\n")
+        time.sleep(0.1)
+        uart1.write(tag.hex().encode('utf-8'))
+        time.sleep(0.1)
+        uart1.write(b"\n")
+        time.sleep(0.1)
+        # In kết quả
+        print("Nonce ngẫu nhiên (hex):", nonce_hex)
+        print("Kết quả mã hóa:")
+        print("Ciphertext (hex):      ", ciphertext.hex())
+        print("Tag (hex):             ", tag.hex())
+        print("Ciphertext + Tag (hex):", ciphertext_and_tag.hex())
+    except Exception as e:
+        print("Lỗi mã hóa:", e)
+    print("Hex Array:", plaintext_hex)
+    print("-----")
+    time.sleep(0.2)

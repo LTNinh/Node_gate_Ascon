@@ -1,0 +1,2 @@
+/usr/bin/ar qc libcrypto_auth_asconmacv13_ref.a CMakeFiles/crypto_auth_asconmacv13_ref.dir/crypto_auth/asconmacv13/ref/prf.c.o CMakeFiles/crypto_auth_asconmacv13_ref.dir/crypto_auth/asconmacv13/ref/printstate.c.o
+/usr/bin/ranlib libcrypto_auth_asconmacv13_ref.a

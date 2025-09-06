@@ -1,0 +1,2 @@
+/usr/bin/ar qc libcrypto_hash_asconhash256_esp32.a CMakeFiles/crypto_hash_asconhash256_esp32.dir/crypto_hash/asconhash256/esp32/hash.c.o CMakeFiles/crypto_hash_asconhash256_esp32.dir/crypto_hash/asconhash256/esp32/permutations.c.o CMakeFiles/crypto_hash_asconhash256_esp32.dir/crypto_hash/asconhash256/esp32/printstate.c.o
+/usr/bin/ranlib libcrypto_hash_asconhash256_esp32.a

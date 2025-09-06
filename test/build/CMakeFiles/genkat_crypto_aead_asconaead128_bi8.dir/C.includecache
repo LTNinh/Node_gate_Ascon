@@ -1,0 +1,28 @@
+#IncludeRegexLine: ^[ 	]*[#%][ 	]*(include|import)[ 	]*[<"]([^">]+)([">])
+
+#IncludeRegexScan: ^.*$
+
+#IncludeRegexComplain: ^$
+
+#IncludeRegexTransform: 
+
+../crypto_aead/asconaead128/bi8/api.h
+
+/home/pi/ascon-c/tests/crypto_aead.h
+
+/home/pi/ascon-c/tests/genkat_aead.c
+inttypes.h
+-
+stdio.h
+-
+stdlib.h
+-
+string.h
+-
+api.h
+/home/pi/ascon-c/tests/api.h
+crypto_aead.h
+/home/pi/ascon-c/tests/crypto_aead.h
+avr_uart.h
+/home/pi/ascon-c/tests/avr_uart.h
+

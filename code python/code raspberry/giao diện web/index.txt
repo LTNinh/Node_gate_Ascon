@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>LoRa Sensor Dashboard</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 30px; background: #f2f2f2; }
+        .box { background: white; padding: 20px; border-radius: 8px; max-width: 500px; margin: auto; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+        h1 { text-align: center; }
+        .label { font-weight: bold; }
+        .item { margin-bottom: 10px; }
+        .top-right { text-align: right; margin-bottom: 10px; }
+    </style>
+    <script src="https://cdn.socket.io/4.3.2/socket.io.min.js"></script>
+    <script>
+        const socket = io();
+        socket.on('new_data', function(data) {
+            document.getElementById('light').textContent = data.light;
+            document.getElementById('motion').textContent = data.motion;
+            document.getElementById('temperature').textContent = data.temperature + "*C";
+            document.getElementById('humidity').textContent = data.humidity + "%";
+            document.getElementById('latitude').textContent = `${data.latitude.deg}*${data.latitude.min}'${data.latitude.sec}\" ${data.latitude.dir}`;
+            document.getElementById('longitude').textContent = `${data.longitude.deg}*${data.longitude.min}'${data.longitude.sec}\" ${data.longitude.dir}`;
+        });
+    </script>
+</head>
+<body>
+    <div class="box">
+        <div class="top-right">
+            <a href="/change-password">Change Password</a> | 
+            <a href="/logout">Log Out</a>
+        </div>
+        <h1>LoRa Sensor Dashboard</h1>
+        {% if data %}
+            <div class="item"><span class="label">Light:</span> <span id="light">{{ data.light }}</span></div>
+            <div class="item"><span class="label">Motion:</span> <span id="motion">{{ data.motion }}</span></div>
+            <div class="item"><span class="label">Temperature:</span> <span id="temperature">{{ data.temperature }}*C</span></div>
+            <div class="item"><span class="label">Humidity:</span> <span id="humidity">{{ data.humidity }}%</span></div>
+            <div class="item"><span class="label">Latitude:</span> <span id="latitude">{{ data.latitude.deg }}*{{ data.latitude.min }}'{{ data.latitude.sec }}" {{ data.latitude.dir }}</span></div>
+            <div class="item"><span class="label">Longitude:</span> <span id="longitude">{{ data.longitude.deg }}*{{ data.longitude.min }}'{{ data.longitude.sec }}" {{ data.longitude.dir }}</span></div>
+        {% else %}
+            <p>No data received yet.</p>
+        {% endif %}
+    </div>
+</body>
+</html>

@@ -1,0 +1,2 @@
+/usr/bin/ar qc libcrypto_auth_asconprfsv13_bi8.a CMakeFiles/crypto_auth_asconprfsv13_bi8.dir/crypto_auth/asconprfsv13/bi8/constants.c.o CMakeFiles/crypto_auth_asconprfsv13_bi8.dir/crypto_auth/asconprfsv13/bi8/interleave.c.o CMakeFiles/crypto_auth_asconprfsv13_bi8.dir/crypto_auth/asconprfsv13/bi8/permutations.c.o CMakeFiles/crypto_auth_asconprfsv13_bi8.dir/crypto_auth/asconprfsv13/bi8/prfs.c.o CMakeFiles/crypto_auth_asconprfsv13_bi8.dir/crypto_auth/asconprfsv13/bi8/printstate.c.o
+/usr/bin/ranlib libcrypto_auth_asconprfsv13_bi8.a

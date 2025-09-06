@@ -1,0 +1,498 @@
+// ASCON-128 Implementation and Benchmark for Arduino
+// Integrated from opt32 version
+// --- Chỉnh sửa bởi ChatGPT: giữ nguyên tất cả chức năng, sửa lỗi logic, chuẩn hoá in gửi (nonce/cipher/tag)
+
+#include <Arduino.h>
+#include <string.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <AsconESP32.h>
+#include "esp_system.h"
+// Khai báo cảm biến 
+#include <DHT.h>
+#include <TinyGPS++.h>
+TinyGPSPlus gps;
+
+unsigned char sensordata[12] = {0};
+#define LDR  34
+#define DHTPIN 32
+#define DHTTYPE DHT22
+DHT dht(DHTPIN, DHTTYPE);
+#define MOVE 5
+
+#ifdef ESP32
+#include "esp_timer.h"
+#include "esp_wifi.h"
+#include "esp_bt.h"
+#include "esp_system.h"
+#include "esp_heap_caps.h"
+#include "soc/rtc.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#endif
+
+// Benchmark code
+#define NUM_BLOCKS 1  // Giảm xuống để phù hợp với bộ nhớ Arduino
+#define BLOCK_SIZE 1000   // 16 bytes = 128 bits // đã thay đổi ở đây // b0
+#define MESSAGE_SIZE  (NUM_BLOCKS * BLOCK_SIZE)
+#define MESSAGE_SIZE1 12
+// Biến toàn cục để theo dõi hiệu năng của các core
+struct CoreStats {
+    float enc_throughput;
+    float dec_throughput;
+    bool completed; 
+} core_stats[2] = {{0, 0, false}, {0, 0, false}};
+
+portMUX_TYPE statsMutex = portMUX_INITIALIZER_UNLOCKED;
+
+void print_total_throughput() {
+    float total_enc = core_stats[0].enc_throughput + core_stats[1].enc_throughput;
+    float total_dec = core_stats[0].dec_throughput + core_stats[1].dec_throughput;
+    
+    Serial.println("\n=== Total System Performance ===");
+    Serial.printf("Total Encryption Throughput: %.2f MB/s\n", total_enc);
+    Serial.printf("Total Decryption Throughput: %.2f MB/s\n", total_dec);
+    Serial.printf("Total Combined Throughput: %.2f MB/s\n", total_enc + total_dec);
+    Serial.println("--------------------");
+}
+
+SemaphoreHandle_t printSemaphore = NULL;
+TaskHandle_t finishedTaskHandle = NULL;
+volatile bool resultsPrinted = false;
+
+void check_and_print_total() {
+    bool all_completed = false;
+    bool should_print = false;
+    
+    portENTER_CRITICAL(&statsMutex);
+    all_completed = core_stats[0].completed && core_stats[1].completed;
+    if (all_completed && !resultsPrinted) {
+        should_print = true;
+        resultsPrinted = true;
+    }
+    portEXIT_CRITICAL(&statsMutex);
+    
+    if (should_print) {
+        // Đợi một chút để các core kết thúc in kết quả riêng
+        vTaskDelay(pdMS_TO_TICKS(100));
+        
+        float total_enc = core_stats[0].enc_throughput + core_stats[1].enc_throughput;
+        float total_dec = core_stats[0].dec_throughput + core_stats[1].dec_throughput;
+        
+        Serial.println("\n=== Final System Performance ===");
+        Serial.printf("Core 0 - Encryption: %.2f MB/s, Decryption: %.2f MB/s\n", 
+            core_stats[0].enc_throughput, core_stats[0].dec_throughput);
+        Serial.printf("Core 1 - Encryption: %.2f MB/s, Decryption: %.2f MB/s\n", 
+            core_stats[1].enc_throughput, core_stats[1].dec_throughput);
+        Serial.println("--------------------");
+        Serial.printf("Total Encryption Throughput: %.2f MB/s\n", total_enc);
+        Serial.printf("Total Decryption Throughput: %.2f MB/s\n", total_dec);
+        Serial.printf("Total Combined Throughput: %.2f MB/s\n", total_enc + total_dec);
+        Serial.println("--------------------\n");
+    }
+}
+
+void print_results(const char* operation, uint64_t time_us, size_t size) {
+    xSemaphoreTake(printSemaphore, portMAX_DELAY);
+
+    float throughput = (float)size / (time_us / 1000000.0f); // bytes per second
+    float mbps = throughput / (1024 * 1024); // convert to MB/s
+    float cycles_per_byte = (float)(ESP.getCpuFreqMHz() * time_us) / (size ? size : 1);
+    
+    Serial.printf("%s:\n", operation);
+    Serial.printf("Time: %llu microseconds\n", time_us);
+    Serial.printf("Throughput: %.2f MB/s\n", mbps);
+    Serial.printf("Cycles/byte: %.2f\n", cycles_per_byte);
+    Serial.println("--------------------");
+    xSemaphoreGive(printSemaphore);
+}
+
+void generate_nonce(unsigned char* nonce) {
+    for (size_t i = 0; i < CRYPTO_NPUBBYTES; i++) {
+        nonce[i] = (unsigned char)esp_random();  
+    }
+}
+
+// --- Hàm tiện ích: gửi mảng bytes dưới dạng hex (không khoảng trắng)
+void sendHexLineSerial1(const unsigned char* data, size_t len) {
+    // Gửi một dòng hex (lowercase). Code 1 chấp nhận cả hoa/lẻ => ok.
+    for (size_t i = 0; i < len; ++i) {
+        Serial1.printf("%02x", data[i]);
+    }
+    Serial1.printf("\n");
+}
+
+// --- Hàm gửi nonce / ciphertext / tag theo đúng format (3 dòng) cho code 1
+void send_encrypted_packet_via_uart1(const unsigned char* nonce, const unsigned char* ciphertext, size_t clen) {
+    // clen = ciphertext length including tag (crypto_aead_encrypt returns clen includes tag)
+    if (clen < CRYPTO_ABYTES) {
+        // shouldn't happen, but check
+        Serial.println("ERROR: clen < CRYPTO_ABYTES in send_encrypted_packet_via_uart1");
+        return;
+    }
+    size_t ct_only_len = clen - CRYPTO_ABYTES;
+    const unsigned char* tag_ptr = ciphertext + ct_only_len;
+
+    // 1) Send nonce (CRYPTO_NPUBBYTES bytes) as hex on its own line
+    sendHexLineSerial1(nonce, CRYPTO_NPUBBYTES);
+
+    // 2) Send ciphertext-only (ct_only_len bytes) as hex on next line
+    sendHexLineSerial1(ciphertext, ct_only_len);
+
+    // 3) Send tag (CRYPTO_ABYTES bytes) as hex on third line
+    sendHexLineSerial1(tag_ptr, CRYPTO_ABYTES);
+
+    // Done - code 1 expects exactly these three lines in this order.
+}
+
+// --- Optional helper: print some bytes to Serial for debug
+void printBytesHexLineSerial(const char* label, const unsigned char* data, size_t len) {
+    Serial.print(label);
+    for (size_t i = 0; i < len; ++i) {
+        Serial.printf("%02X", data[i]);
+    }
+    Serial.println();
+}
+
+void benchmark_ascon() {
+    // Test vectors
+    unsigned char key[CRYPTO_KEYBYTES] = {1};  // All zeros key for testing (note: only first byte set to 1 here)
+    unsigned char nonce[CRYPTO_NPUBBYTES] = {1};  // All zeros nonce
+    unsigned char ad[16] = {0};  // Associated data    // CÓ SỬA DATA ĐỂ KIỂM TRA THÌ SỬA Ở ĐÂY NÀY.
+    size_t adlen = sizeof(ad);
+    
+    // Allocate buffers
+    unsigned char* message = (unsigned char*)malloc(MESSAGE_SIZE);
+    unsigned char* ciphertext = (unsigned char*)malloc(MESSAGE_SIZE + CRYPTO_ABYTES);
+    unsigned char* decrypted = (unsigned char*)malloc(MESSAGE_SIZE);
+    
+    if (!message || !ciphertext || !decrypted) {
+        Serial.println("Memory allocation failed!");
+        if (message) free(message);
+        if (ciphertext) free(ciphertext);
+        if (decrypted) free(decrypted);
+        return;
+    }
+
+    // Initialize test message (if MESSAGE_SIZE > sizeof(custom_message) this will repeat/garbage;
+    // keep original intent but ensure no out-of-bounds)
+    unsigned char custom_message[8] = {'o','d','o','i','o','i',0,0}; // small example
+    for (size_t i = 0; i < MESSAGE_SIZE; ++i) {
+        message[i] = custom_message[i % sizeof(custom_message)];
+    }
+
+    // (cũ) Serial1.println(message[MESSAGE_SIZE]);  // <-- đây là bug (out-of-bounds). Thay bằng newline debug
+    Serial1.println(); // newline separator for any listeners
+
+    unsigned long long clen = 0, mlen = 0;
+    unsigned long start_time = 0, end_time = 0;
+
+    // Test encryption
+    start_time = micros();
+    crypto_aead_encrypt(ciphertext, &clen,
+                       message, MESSAGE_SIZE,
+                       ad, adlen,
+                       NULL,
+                       nonce, key);
+    end_time = micros();
+    print_results("Encryption", (uint64_t)(end_time - start_time), MESSAGE_SIZE);
+
+    // Test decryption
+    start_time = micros();
+    crypto_aead_decrypt(decrypted, &mlen,
+                       NULL,
+                       ciphertext, clen,
+                       ad, adlen,
+                       nonce, key);
+    end_time = micros();
+    print_results("Decryption", (uint64_t)(end_time - start_time), MESSAGE_SIZE);
+
+    // Verify decryption
+    if (mlen != MESSAGE_SIZE || memcmp(message, decrypted, MESSAGE_SIZE) != 0) {
+        Serial.println("ERROR: Decryption failed - messages don't match!");
+    } else {
+        Serial.println("Verification successful - decrypted message matches original");
+    }
+
+    // Free memory
+    free(message);
+    free(ciphertext);
+    free(decrypted);
+}
+
+// Đặt các hàm quan trọng vào IRAM
+void IRAM_ATTR benchmark_core(void* parameter) {
+    int core_id = xPortGetCoreID();
+
+    unsigned char* message = (unsigned char*)heap_caps_malloc(MESSAGE_SIZE, MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL);
+    unsigned char* message1 = (unsigned char*)heap_caps_malloc(MESSAGE_SIZE1, MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL);
+    unsigned char* ciphertext = (unsigned char*)heap_caps_malloc(MESSAGE_SIZE + CRYPTO_ABYTES, MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL);
+    unsigned char* ciphertext1 = (unsigned char*)heap_caps_malloc(MESSAGE_SIZE1 + CRYPTO_ABYTES, MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL);
+ 
+    unsigned char* decrypted = (unsigned char*)heap_caps_malloc(MESSAGE_SIZE, MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL);
+
+    // Đọc dữ liệu cảm biến trước khi benchmark
+    read_data_sensor();
+    Print_datasensor();
+
+    if (!message || !ciphertext || !decrypted) {
+        Serial.printf("Core %d: Memory allocation failed!\n", core_id);
+        if (message) heap_caps_free(message);
+        if (ciphertext) heap_caps_free(ciphertext);
+        if (decrypted) heap_caps_free(decrypted);
+        vTaskDelete(NULL);
+        return;
+    }
+
+    // Test vectors (key/nonce/ad)
+    unsigned char key[CRYPTO_KEYBYTES] = {
+        0x00, 0x01, 0x02, 0x03,
+        0x04, 0x05, 0x06, 0x07,
+        0x08, 0x09, 0x0A, 0x0B,
+        0x0C, 0x0D, 0x0E, 0x0F
+    };
+    unsigned char nonce[CRYPTO_NPUBBYTES];
+    generate_nonce(nonce);
+    unsigned char ad[16] = {
+        0x30,0x31,0x32,0x33,0x34,0x35,0x36,0x37,
+        0x38,0x39,0x3A,0x3B,0x3C,0x3D,0x3E,0x3F
+    };
+    size_t adlen = sizeof(ad);
+
+    // Initialize message from sensordata
+    memcpy(message1, sensordata, MESSAGE_SIZE1);
+   for (size_t i = 0; i < MESSAGE_SIZE; i++) {
+        message[i] = (unsigned char)i;
+    }
+    unsigned long long clen = 0, mlen = 0;
+    uint64_t start_time = 0, end_time = 0;
+
+    // Warm up caches
+    crypto_aead_encrypt(ciphertext, &clen, message, MESSAGE_SIZE, ad, adlen, NULL, nonce, key);
+    crypto_aead_encrypt(ciphertext1, &clen, message1, MESSAGE_SIZE1, ad, adlen, NULL, nonce, key);
+   crypto_aead_decrypt(decrypted, &mlen, NULL, ciphertext, clen, ad, adlen, nonce, key);
+
+    portDISABLE_INTERRUPTS();  // Disable interrupts for accurate timing
+    
+    // Test encryption (run many times and average)
+    start_time = esp_timer_get_time();
+    for (int i = 0; i < 10; i++) {
+        crypto_aead_encrypt(ciphertext, &clen, message, MESSAGE_SIZE, ad, adlen, NULL, nonce, key);
+    }
+    end_time = esp_timer_get_time();
+    portENABLE_INTERRUPTS();
+    uint64_t enc_time = (end_time - start_time) / 10;  // Average time per run
+    
+    portDISABLE_INTERRUPTS();
+    // Test decryption (run many times and average)
+    start_time = esp_timer_get_time();
+    for (int i = 0; i < 10; i++) {
+        crypto_aead_decrypt(decrypted, &mlen, NULL, ciphertext, clen, ad, adlen, nonce, key);
+    }
+    end_time = esp_timer_get_time();
+    portENABLE_INTERRUPTS();
+    uint64_t dec_time = (end_time - start_time) / 10;
+
+    // Calculate throughputs
+    float enc_throughput = (float)MESSAGE_SIZE / (enc_time / 1000000.0f) / (1024 * 1024);
+    float dec_throughput = (float)MESSAGE_SIZE / (dec_time / 1000000.0f) / (1024 * 1024);
+    
+    // Update core statistics
+    portENTER_CRITICAL(&statsMutex);
+    core_stats[core_id].enc_throughput = enc_throughput;
+    core_stats[core_id].dec_throughput = dec_throughput;
+    core_stats[core_id].completed = true;
+    portEXIT_CRITICAL(&statsMutex);
+
+    // Print results for this core
+    Serial.printf("\n=== Results from Core %d ===\n", core_id);
+    print_results("Encryption", enc_time, MESSAGE_SIZE);
+    print_results("Decryption", dec_time, MESSAGE_SIZE);
+
+    // Verify decryption
+    if (memcmp(message, decrypted, MESSAGE_SIZE) != 0) {
+        Serial.printf("Core %d: ERROR - Decryption failed!\n", core_id);
+    } else {
+        Serial.printf("Core %d: Verification successful\n", core_id);
+    }
+    
+    check_and_print_total();
+
+    // === Gửi nonce / ciphertext / tag qua Serial1 =====
+    // Chỉ gửi từ core 0 để tránh in nhiều lần
+    if (xPortGetCoreID() == 0) {
+        // Gửi 3 dòng: nonce, ciphertext (không gồm tag), tag
+        Serial1.printf("\n"); 
+for (size_t i = 0; i < CRYPTO_NPUBBYTES; i++) {
+    Serial1.printf("%02x", nonce[i]);
+     // In 16 byte mỗi dòng
+}
+    // Serial1.printf("\nCore %d - Ciphertext (hex): ", core_id);
+    Serial1.printf("\n");
+for (size_t i = 0; i < MESSAGE_SIZE1; i++) {
+    Serial1.printf("%02x", ciphertext1[i]);
+    // In 16 byte ỗi dòng
+}
+// Serial1.printf("\nCore %d - Tag (hex): ", core_id);
+Serial1.printf("\n");
+for (size_t i = MESSAGE_SIZE1; i < MESSAGE_SIZE1 + CRYPTO_ABYTES; i++) {
+    Serial1.printf("%02x", ciphertext1[i]);
+}
+
+    }
+
+    // Free memory
+    heap_caps_free(message);
+    heap_caps_free(ciphertext);
+    heap_caps_free(decrypted);
+
+    // Sleep a bit before next iteration
+    vTaskDelay(pdMS_TO_TICKS(1000));
+     // Task hoàn thành (nếu bạn muốn task lặp lại, không delete)
+}
+
+void setup() {
+    Serial.begin(115200);
+    Serial1.begin(115200, SERIAL_8N1, 16, 17); // UART1 TX=17 RX=16 (như code gốc)
+    pinMode(LDR, INPUT);
+    pinMode(MOVE, INPUT_PULLDOWN);
+    dht.begin();
+    Serial2.begin(38400, SERIAL_8N1, 19, 18); // GPS uart
+    
+  
+    #ifdef ESP32
+    // Khởi tạo semaphore để đồng bộ việc in
+    printSemaphore = xSemaphoreCreateMutex();
+    // Đặt tần số CPU tối đa và điều chỉnh điện áp
+    rtc_cpu_freq_config_t config;
+    rtc_clk_cpu_freq_get_config(&config);
+    config.freq_mhz = 240;  // Overclock to 240MHz (giữ nguyên như code gốc)
+    config.div = 1;
+    rtc_clk_cpu_freq_set_config_fast(&config);
+    
+    // Tắt Wi-Fi và Bluetooth để tiết kiệm năng lượng (giữ nguyên)
+    esp_wifi_stop();
+    esp_bt_controller_disable();
+    
+    Serial.println("\nASCON-128 Benchmark on ESP32 (Dual Core)");
+    Serial.printf("CPU Frequency: %d MHz\n", ESP.getCpuFreqMHz());
+    Serial.printf("Testing with message size: %d bytes\n", MESSAGE_SIZE);
+    Serial.println("Running on both cores...\n");
+    
+    // Chạy benchmark trên cả 2 core (giữ nguyên)
+    xTaskCreatePinnedToCore(benchmark_core, "benchmark_core0", 32768, NULL, 1, NULL, 0);
+    xTaskCreatePinnedToCore(benchmark_core, "benchmark_core1", 32768, NULL, 1, NULL, 1);
+    #else
+    Serial.println("\nASCON-128 Benchmark");
+    Serial.print("Testing with message size: ");
+    Serial.print(MESSAGE_SIZE);
+    Serial.println(" bytes\n");
+    
+    // Run benchmark (non-ESP32)
+    benchmark_ascon();
+    #endif
+}
+
+// Hàm chuyển đổi của gps.
+void convertToDMS(double decimalDegrees, bool isLatitude, int &degrees, int &minutes, double &seconds, char &direction) {
+  if (decimalDegrees == 0.0) {
+    // Nếu không có dữ liệu (chưa cập nhật), đặt tất cả về 0
+    degrees = 0;
+    minutes = 0;
+    seconds = 0.0;
+    direction = isLatitude ? 'N' : 'E'; // Mặc định: North cho vĩ độ, East cho kinh độ
+    return;
+  }
+
+  // Xác định hướng
+  if (decimalDegrees >= 0) {
+    direction = isLatitude ? 'N' : 'E'; // North hoặc East
+  } else {
+    direction = isLatitude ? 'S' : 'W'; // South hoặc West
+    decimalDegrees = -decimalDegrees; // Chuyển thành số dương để tính toán
+  }
+
+  // Tách độ, phút, giây
+  degrees = (int)decimalDegrees; // Phần nguyên là độ
+  double fractional = decimalDegrees - degrees; // Phần thập phân
+  minutes = (int)(fractional * 60); // Phần thập phân * 60 là phút
+  seconds = (fractional * 60 - minutes) * 60; // Phần thập phân của phút * 60 là giây
+}
+
+void read_data_sensor() {
+    uint8_t ldr_data = analogRead(LDR) / 16; // 0-4095 -> 0-255
+    uint8_t move_data = digitalRead(MOVE);
+    uint8_t humidity_data = dht.readHumidity();
+    uint8_t temperature_data = dht.readTemperature();
+
+    // gps
+    int latDegrees = 0, latMinutes = 0, lonDegrees = 0, lonMinutes = 0;
+    double latSeconds = 0.0, lonSeconds = 0.0;
+    char latDirection = 'N', lonDirection = 'E';
+
+    // Đọc tất cả byte từ Serial2 (GPS) để feed cho TinyGPS++
+    while (Serial2.available() > 0) {
+        char c = Serial2.read();
+        gps.encode(c);
+    }
+
+    if (gps.location.isUpdated() || gps.location.isValid()) {
+        double latitude = gps.location.lat();
+        double longitude = gps.location.lng();
+        convertToDMS(latitude, true, latDegrees, latMinutes, latSeconds, latDirection);
+        convertToDMS(longitude, false, lonDegrees, lonMinutes, lonSeconds, lonDirection);
+    } else {
+        convertToDMS(0.0, true, latDegrees, latMinutes, latSeconds, latDirection);
+        convertToDMS(0.0, false, lonDegrees, lonMinutes, lonSeconds, lonDirection);
+    }
+
+    // Fill sensordata (giữ nguyên cấu trúc cũ)
+ 
+     sensordata[0] = (unsigned char)ldr_data;
+    sensordata[1] = (unsigned char)move_data;
+    sensordata[2] = (unsigned char)temperature_data;
+    sensordata[3] = (unsigned char)humidity_data;
+    
+    // gps
+    sensordata[4] = (unsigned char)latDegrees;
+    sensordata[5] = (unsigned char)latMinutes;
+    sensordata[6] = (unsigned char)((int)latSeconds); // store integer seconds portion
+    sensordata[7] = (unsigned char)latDirection;
+    // kinh độ
+    sensordata[8] = (unsigned char)lonDegrees;
+    sensordata[9] = (unsigned char)lonMinutes;
+    sensordata[10] = (unsigned char)((int)lonSeconds);
+    sensordata[11] = (unsigned char)lonDirection;
+}
+
+void Print_datasensor() {
+    if (xPortGetCoreID() == 0) {
+        xSemaphoreTake(printSemaphore, portMAX_DELAY);
+        Serial.printf("---------------------");
+        Serial.printf("\n Ánh sáng: %d   ", sensordata[0]);
+        Serial.printf("Chuyển động:  %d    ", sensordata[1]);
+        Serial.printf("Nhiệt độ:  %d    ", sensordata[2]);
+        Serial.printf("Độ ẩm: %d ", sensordata[3]);
+        Serial.printf(" \nVĩ độ:  ");
+        Serial.printf("  góc: %d  ", sensordata[4]);
+        Serial.printf("   %d phút,  ", sensordata[5]);
+        Serial.printf(" %d giây ", sensordata[6]);
+        Serial.printf("   Hướng: %c \n ", sensordata[7]);
+        Serial.printf("Kinh độ:  ");
+        Serial.printf("góc: %d  ", sensordata[8]);
+        Serial.printf(" %d phút,  ", sensordata[9]);
+        Serial.printf(" %d giây ", sensordata[10]);
+        Serial.printf(" Hướng: %c  \n", sensordata[11]);
+        Serial.printf("---------------------\n");
+        xSemaphoreGive(printSemaphore);
+    }
+}
+
+void loop() {
+    #ifdef ESP32
+    // ESP32 không cần làm gì trong loop khi đang chạy task
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    #else
+    delay(1000);
+    #endif
+}

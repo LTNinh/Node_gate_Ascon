@@ -1,0 +1,1 @@
+/usr/bin/cc -O3 -DNDEBUG -std=c99 -O2 -fomit-frame-pointer -march=native -mtune=native CMakeFiles/genkat_crypto_auth_asconmacv13_opt8.dir/tests/genkat_auth.c.o -o genkat_crypto_auth_asconmacv13_opt8  libcrypto_auth_asconmacv13_opt8.a 

@@ -1,0 +1,2 @@
+/usr/bin/ar qc libcrypto_auth_asconprfsv13_opt32.a CMakeFiles/crypto_auth_asconprfsv13_opt32.dir/crypto_auth/asconprfsv13/opt32/permutations.c.o CMakeFiles/crypto_auth_asconprfsv13_opt32.dir/crypto_auth/asconprfsv13/opt32/prfs.c.o CMakeFiles/crypto_auth_asconprfsv13_opt32.dir/crypto_auth/asconprfsv13/opt32/printstate.c.o
+/usr/bin/ranlib libcrypto_auth_asconprfsv13_opt32.a

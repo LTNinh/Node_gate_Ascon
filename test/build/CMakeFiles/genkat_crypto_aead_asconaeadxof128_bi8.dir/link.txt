@@ -1,0 +1,1 @@
+/usr/bin/cc -O3 -DNDEBUG -std=c99 -O2 -fomit-frame-pointer -march=native -mtune=native CMakeFiles/genkat_crypto_aead_asconaeadxof128_bi8.dir/tests/genkat_aead.c.o -o genkat_crypto_aead_asconaeadxof128_bi8  libcrypto_aead_asconaeadxof128_bi8.a 

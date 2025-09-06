@@ -1,0 +1,1 @@
+/usr/bin/cc -O3 -DNDEBUG -std=c99 -O2 -fomit-frame-pointer -march=native -mtune=native CMakeFiles/genkat_crypto_hash_asconhash256_opt32.dir/tests/genkat_hash.c.o -o genkat_crypto_hash_asconhash256_opt32  libcrypto_hash_asconhash256_opt32.a 

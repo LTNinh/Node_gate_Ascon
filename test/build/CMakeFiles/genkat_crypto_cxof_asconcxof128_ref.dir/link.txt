@@ -1,0 +1,1 @@
+/usr/bin/cc -O3 -DNDEBUG -std=c99 -O2 -fomit-frame-pointer -march=native -mtune=native CMakeFiles/genkat_crypto_cxof_asconcxof128_ref.dir/tests/genkat_cxof.c.o -o genkat_crypto_cxof_asconcxof128_ref  libcrypto_cxof_asconcxof128_ref.a 

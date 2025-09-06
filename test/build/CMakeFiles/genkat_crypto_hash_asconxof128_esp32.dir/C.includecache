@@ -1,0 +1,26 @@
+#IncludeRegexLine: ^[ 	]*[#%][ 	]*(include|import)[ 	]*[<"]([^">]+)([">])
+
+#IncludeRegexScan: ^.*$
+
+#IncludeRegexComplain: ^$
+
+#IncludeRegexTransform: 
+
+../crypto_hash/asconxof128/esp32/api.h
+
+/home/pi/ascon-c/tests/crypto_hash.h
+
+/home/pi/ascon-c/tests/genkat_hash.c
+stdio.h
+-
+stdlib.h
+-
+string.h
+-
+api.h
+/home/pi/ascon-c/tests/api.h
+crypto_hash.h
+/home/pi/ascon-c/tests/crypto_hash.h
+avr_uart.h
+/home/pi/ascon-c/tests/avr_uart.h
+

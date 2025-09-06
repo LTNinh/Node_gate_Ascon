@@ -1,0 +1,86 @@
+# ---- paths ----
+ASCON_BASE := /home/pi/test/ascon-c
+AEAD_DIR   := $(ASCON_BASE)/crypto_aead/asconaead128
+REF_DIR    := $(AEAD_DIR)/ref
+
+# ---- compile flags ----
+#   -I $(REF_DIR)       -> cho ascon.h, permutations.h, ...
+#   -I $(AEAD_DIR)/api  -> cho api.h
+#   -I $(ASCON_BASE)/tests -> CHÍNH: chứa crypto_aead.h
+CFLAGS := -std=c11 -O3 -Wall -Wextra \
+          -I$(REF_DIR) -I$(AEAD_DIR)/api -I$(ASCON_BASE)/tests
+
+# ---- sources ----
+ASCON_SRC := $(wildcard $(REF_DIR)/*.c)
+
+# ---- your program ----
+MAIN := test1.c
+OUT  := test1
+
+$(OUT): $(MAIN) $(ASCON_SRC)
+	$(CC) $(CFLAGS) $^ -o $@
+
+.PHONY: clean run
+clean:
+	rm -f $(OUT)
+
+run: $(OUT)
+	./$(OUT) /dev/serial0
+
+
+
+# # web3
+# # ---- paths ----
+# ASCON_BASE := /home/pi/test/ascon-c
+# AEAD_DIR   := $(ASCON_BASE)/crypto_aead/asconaead128
+# REF_DIR    := $(AEAD_DIR)/ref
+
+# # ---- flags ----
+# # Sử dụng ccache nếu có, giảm -O3 thành -O2 để tăng tốc biên dịch
+# CC := $(shell command -v ccache >/dev/null && echo "ccache gcc" || echo "gcc")
+# CFLAGS  := -std=c11 -O2 -Wall -Wextra \
+#            -I$(REF_DIR) -I$(AEAD_DIR)/api -I$(ASCON_BASE)/tests \
+#            -DNO_SSL -DUSE_WEBSOCKET=1 -DUSE_IPV6=1
+# LDFLAGS := -lpthread -ldl
+
+# # ---- sources ----
+# ASCON_SRC := $(wildcard $(REF_DIR)/*.c)
+
+# # ---- programs ----
+# MAIN := test1.c
+# OUT  := test1
+
+# # Chỉ dùng server.c và civetweb.c để biên dịch dashboard
+# DASH_SRC := server.c civetweb.c
+# DASH_OUT := dashboard
+
+# # Các file .inl là phụ thuộc, không biên dịch
+# DASH_INL := md5.inl sort.inl match.inl response.inl sha1.inl handle_form.inl
+
+# .PHONY: all clean run run-test1 run-dashboard
+
+# all: $(OUT) $(DASH_OUT)
+
+# $(OUT): $(MAIN) $(ASCON_SRC)
+# 	@echo "Biên dịch $(OUT)..."
+# 	$(CC) $(CFLAGS) $(MAIN) $(ASCON_SRC) -o $@ $(LDFLAGS)
+
+# $(DASH_OUT): $(DASH_SRC) $(ASCON_SRC) $(DASH_INL)
+# 	@echo "Biên dịch $(DASH_OUT)..."
+# 	$(CC) $(CFLAGS) $(DASH_SRC) $(ASCON_SRC) -o $@ $(LDFLAGS)
+
+# run: $(DASH_OUT)
+# 	@echo "Chạy dashboard..."
+# 	./$(DASH_OUT) /dev/serial0
+
+# run-test1: $(OUT)
+# 	@echo "Chạy test1..."
+# 	./$(OUT) /dev/serial0
+
+# run-dashboard: $(DASH_OUT)
+# 	@echo "Chạy dashboard..."
+# 	./$(DASH_OUT) /dev/serial0
+
+# clean:
+# 	rm -f $(OUT) $(DASH_OUT)
+# 	@echo "Đã xóa $(OUT) và $(DASH_OUT)"

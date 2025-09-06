@@ -1,0 +1,2 @@
+/usr/bin/ar qc libcrypto_auth_asconmacv13_bi32.a CMakeFiles/crypto_auth_asconmacv13_bi32.dir/crypto_auth/asconmacv13/bi32/constants.c.o CMakeFiles/crypto_auth_asconmacv13_bi32.dir/crypto_auth/asconmacv13/bi32/interleave.c.o CMakeFiles/crypto_auth_asconmacv13_bi32.dir/crypto_auth/asconmacv13/bi32/permutations.c.o CMakeFiles/crypto_auth_asconmacv13_bi32.dir/crypto_auth/asconmacv13/bi32/prf.c.o CMakeFiles/crypto_auth_asconmacv13_bi32.dir/crypto_auth/asconmacv13/bi32/printstate.c.o
+/usr/bin/ranlib libcrypto_auth_asconmacv13_bi32.a

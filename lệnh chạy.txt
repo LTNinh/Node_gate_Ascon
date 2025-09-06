@@ -1,0 +1,21 @@
+gcc test.c -o test
+./test  
+
+make clean
+make
+./test1  
+
+lệnh chạy với web2 (có web trên file make)
+make clean
+make run
+
+lệnh chạy trên thư mục của thầy
+gcc -o build/benchmark_aead128 benchmark_aead128.c crypto_aead/asconaead128/ref/aead.c -I. -Icrypto_aead/asconaead128/ref -Itests -O3
+./build/benchmark_aead128
+
+
+lệnh chạy file benchmark trên folder test
+gcc -o build/benchmark_aead128 benchmark_aead128.c     ascon-c/crypto_aead/asconaead128/ref/aead.c     -Iascon-c/crypto_aead/asconaead128/ref     -Iascon-c/tests     -O3 -march=native
+./build/benchmark_aead128
+
+

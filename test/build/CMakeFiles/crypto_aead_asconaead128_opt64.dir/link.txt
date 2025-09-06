@@ -1,0 +1,2 @@
+/usr/bin/ar qc libcrypto_aead_asconaead128_opt64.a CMakeFiles/crypto_aead_asconaead128_opt64.dir/crypto_aead/asconaead128/opt64/aead.c.o CMakeFiles/crypto_aead_asconaead128_opt64.dir/crypto_aead/asconaead128/opt64/permutations.c.o CMakeFiles/crypto_aead_asconaead128_opt64.dir/crypto_aead/asconaead128/opt64/printstate.c.o
+/usr/bin/ranlib libcrypto_aead_asconaead128_opt64.a

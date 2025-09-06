@@ -1,0 +1,2 @@
+/usr/bin/ar qc libcrypto_aead_asconaead128_ref.a CMakeFiles/crypto_aead_asconaead128_ref.dir/crypto_aead/asconaead128/ref/aead.c.o CMakeFiles/crypto_aead_asconaead128_ref.dir/crypto_aead/asconaead128/ref/printstate.c.o
+/usr/bin/ranlib libcrypto_aead_asconaead128_ref.a

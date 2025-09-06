@@ -1,0 +1,176 @@
+import eventlet
+eventlet.monkey_patch()
+
+from flask import Flask, request, jsonify, render_template, redirect, url_for, session, flash
+from flask_socketio import SocketIO
+from werkzeug.security import generate_password_hash, check_password_hash
+import threading
+import serial
+import time
+import os
+import requests
+from ascon import ascon_decrypt, ascon_encrypt
+
+app = Flask(__name__)
+app.secret_key = "your-secret-key"
+socketio = SocketIO(app, cors_allowed_origins='*')
+latest_data = {}
+
+# Default password hash
+stored_password_hash = generate_password_hash("admin123")
+
+# Crypto keys
+key = bytes.fromhex("000102030405060708090A0B0C0D0E0F")
+ad  = bytes.fromhex("303132333435363738393A3B3C3D3E3F")
+
+def is_logged_in():
+    return session.get("logged_in", False)
+
+@app.route('/')
+def index():
+    if not is_logged_in():
+        return redirect(url_for('login'))
+    return render_template("index.html", data=latest_data)
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    global stored_password_hash
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+        if username == 'admin' and check_password_hash(stored_password_hash, password):
+            session['logged_in'] = True
+            return redirect(url_for('index'))
+        flash("Incorrect username or password", "error")
+    return render_template('login.html')
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect(url_for('login'))
+
+@app.route('/change-password', methods=['GET', 'POST'])
+def change_password():
+    global stored_password_hash
+    if not is_logged_in():
+        return redirect(url_for('login'))
+
+    if request.method == 'POST':
+        current = request.form['current-password']
+        new = request.form['new-password']
+        confirm = request.form['confirm-password']
+
+        if not check_password_hash(stored_password_hash, current):
+            flash("Current password is incorrect", "error")
+        elif new != confirm:
+            flash("New password and confirmation do not match", "error")
+        elif len(new) < 6:
+            flash("New password must be at least 6 characters", "error")
+        else:
+            stored_password_hash = generate_password_hash(new)
+            flash("Password changed successfully! Please log in again.", "success")
+            session.clear()
+            return redirect(url_for('login'))
+
+    return render_template('change_password.html')
+
+@app.route('/data', methods=['POST'])
+def receive_data():
+    global latest_data
+    try:
+
+        payload     = request.get_json(force=True)
+        nonce       = bytes.fromhex(payload["nonce"])
+        ciphertext  = bytes.fromhex(payload["ciphertext"])
+        tag         = bytes.fromhex(payload["tag"])
+        data        = ciphertext + tag
+
+        plaintext   = ascon_decrypt(key, nonce, ad, data)
+        if plaintext is None:
+            return jsonify({"error": "Decryption failed"}), 400
+
+        hex_data = plaintext.hex()
+        if len(hex_data) != 24:
+            return jsonify({"error": "Invalid plaintext length"}), 400
+
+        b = lambda h: int(h, 16)
+        
+        latest_data = {
+            "light":        b(hex_data[0:2]),
+            "motion":       b(hex_data[2:4]),
+            "temperature":  b(hex_data[4:6]),
+            "humidity":     b(hex_data[6:8]),
+            "latitude": {
+                "deg": b(hex_data[8:10]),
+                "min": b(hex_data[10:12]),
+                "sec": b(hex_data[12:14]),
+                "dir": bytes.fromhex(hex_data[14:16]).decode()
+            },
+            "longitude": {
+                "deg": b(hex_data[16:18]),
+                "min": b(hex_data[18:20]),
+                "sec": b(hex_data[20:22]),
+                "dir": bytes.fromhex(hex_data[22:24]).decode()
+            }
+        }
+
+        socketio.emit('new_data', latest_data)
+        return jsonify({"status": "ok"}), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+def lora_uart_listener():
+    print("LoRa UART listener starting...")
+    uart = serial.Serial(port="/dev/serial0", baudrate=115200, timeout=2)
+
+    def read_uart_packet():
+        buffer = []
+        while True:
+            line = uart.readline().decode('utf-8', errors='ignore').strip()
+            if line:
+                buffer.append(line)
+                print(f"[UART] {line}")
+            if len(buffer) == 3:
+                return buffer
+
+    while True:
+        print("\n--- Waiting for LoRa data ---")
+        packet = read_uart_packet()
+        if not packet:
+            continue
+
+        try:
+            nonce, ciphertext, tag = map(bytes.fromhex, packet)
+            data       = ciphertext + tag
+            plaintext  = ascon_decrypt(key, nonce, ad, data)
+            if plaintext is None:
+                print("Decryption failed.")
+                continue
+
+            print("Decryption OK.")
+            new_nonce  = os.urandom(16)
+            ct_tag     = ascon_encrypt(key, new_nonce, ad, plaintext)
+            new_ct     = ct_tag[:-16]
+            new_tag    = ct_tag[-16:]
+
+            json_data = {
+                "nonce":       new_nonce.hex(),
+                "ciphertext":  new_ct.hex(),
+                "tag":         new_tag.hex()
+            }
+            r = requests.post("http://localhost:5000/data", json=json_data, timeout=3)
+            if r.ok:
+                print("Sent to /data.")
+            else:
+                print("Server error:", r.status_code)
+
+        except Exception as e:
+            print("UART processing error:", e)
+if __name__ == '__main__':
+    flask_thread = threading.Thread(
+        target=lambda: socketio.run(app, host='0.0.0.0', port=5000),
+        daemon=True
+    )
+    flask_thread.start()
+    time.sleep(2)
+    lora_uart_listener()

@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Login</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 30px; background: #f2f2f2; }
+    .box { background:#fff; padding:20px; max-width:320px; margin:auto; border-radius:8px; box-shadow:0 0 10px rgba(0,0,0,.1); }
+    h2 { text-align:center; margin-top:0; }
+    input { width:100%; padding:10px; margin:8px 0; box-sizing:border-box; }
+    button { width:100%; padding:10px; }
+    .err { color:#c00; min-height:1.2em; margin-bottom:8px; }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <h2>Login</h2>
+    <div id="err" class="err"></div>
+    <input type="text" id="username" placeholder="Username" required>
+    <input type="password" id="password" placeholder="Password" required>
+    <button id="btn">Login</button>
+  </div>
+
+  <script>
+  document.getElementById('btn').addEventListener('click', async (e) => {
+    e.preventDefault();
+    const username = document.getElementById('username').value.trim();
+    const password = document.getElementById('password').value;
+    const r = await fetch('/api/login', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ username, password })
+    });
+    const j = await r.json().catch(() => ({ok:false, error:'bad_response'}));
+    if (j.ok) {
+      location.href = '/';
+    } else {
+      document.getElementById('err').textContent = j.error || 'Login failed';
+    }
+  });
+  </script>
+</body>
+</html>

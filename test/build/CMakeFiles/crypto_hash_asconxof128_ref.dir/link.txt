@@ -1,0 +1,2 @@
+/usr/bin/ar qc libcrypto_hash_asconxof128_ref.a CMakeFiles/crypto_hash_asconxof128_ref.dir/crypto_hash/asconxof128/ref/hash.c.o CMakeFiles/crypto_hash_asconxof128_ref.dir/crypto_hash/asconxof128/ref/printstate.c.o
+/usr/bin/ranlib libcrypto_hash_asconxof128_ref.a

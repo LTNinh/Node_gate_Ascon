@@ -1,0 +1,2 @@
+/usr/bin/ar qc libcrypto_hash_asconaeadxof128_ref.a CMakeFiles/crypto_hash_asconaeadxof128_ref.dir/crypto_aead_hash/asconaeadxof128/ref/aead.c.o CMakeFiles/crypto_hash_asconaeadxof128_ref.dir/crypto_aead_hash/asconaeadxof128/ref/hash.c.o CMakeFiles/crypto_hash_asconaeadxof128_ref.dir/crypto_aead_hash/asconaeadxof128/ref/printstate.c.o
+/usr/bin/ranlib libcrypto_hash_asconaeadxof128_ref.a

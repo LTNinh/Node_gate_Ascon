@@ -1,0 +1,212 @@
+<!-- <!-- <!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>LoRa Sensor Dashboard</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 30px; background: #f2f2f2; }
+        .box { background: white; padding: 20px; border-radius: 8px; max-width: 500px; margin: auto; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+        h1 { text-align: center; }
+        .label { font-weight: bold; }
+        .item { margin-bottom: 10px; }
+        .top-right { text-align: right; margin-bottom: 10px; }
+    </style>
+    <script src="https://cdn.socket.io/4.3.2/socket.io.min.js"></script>
+    <script>
+        const socket = io();
+        socket.on('new_data', function(data) {
+            document.getElementById('light').textContent = data.light;
+            document.getElementById('motion').textContent = data.motion;
+            document.getElementById('temperature').textContent = data.temperature + "*C";
+            document.getElementById('humidity').textContent = data.humidity + "%";
+            document.getElementById('latitude').textContent = `${data.latitude.deg}*${data.latitude.min}'${data.latitude.sec}\" ${data.latitude.dir}`;
+            document.getElementById('longitude').textContent = `${data.longitude.deg}*${data.longitude.min}'${data.longitude.sec}\" ${data.longitude.dir}`;
+        });
+    </script>
+</head>
+<body>
+    <div class="box">
+        <div class="top-right">
+            <a href="/change-password">Change Password</a> | 
+            <a href="/logout">Log Out</a>
+        </div>
+        <h1>LoRa Sensor Dashboard</h1>
+        {% if data %}
+            <div class="item"><span class="label">Light:</span> <span id="light">{{ data.light }}</span></div>
+            <div class="item"><span class="label">Motion:</span> <span id="motion">{{ data.motion }}</span></div>
+            <div class="item"><span class="label">Temperature:</span> <span id="temperature">{{ data.temperature }}*C</span></div>
+            <div class="item"><span class="label">Humidity:</span> <span id="humidity">{{ data.humidity }}%</span></div>
+            <div class="item"><span class="label">Latitude:</span> <span id="latitude">{{ data.latitude.deg }}*{{ data.latitude.min }}'{{ data.latitude.sec }}" {{ data.latitude.dir }}</span></div>
+            <div class="item"><span class="label">Longitude:</span> <span id="longitude">{{ data.longitude.deg }}*{{ data.longitude.min }}'{{ data.longitude.sec }}" {{ data.longitude.dir }}</span></div>
+        {% else %}
+            <p>No data received yet.</p>
+        {% endif %}
+    </div>
+</body>
+</html> -->
+
+<!-- 3 -->
+<!-- <!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>LoRa Sensor Dashboard</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 30px; background: #f2f2f2; }
+    .box { background: white; padding: 20px; border-radius: 8px; max-width: 600px; margin: auto; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+    h1 { text-align: center; }
+    .label { font-weight: bold; width: 140px; display:inline-block; }
+    .item { margin: 10px 0; }
+    .top-right { text-align: right; margin-bottom: 10px; }
+    .muted { color:#777; }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <div class="top-right">
+      <a href="/change_password">Change Password</a> |
+      <a href="/logout">Log Out</a>
+    </div>
+    <h1>LoRa Sensor Dashboard</h1>
+
+    <div class="item"><span class="label">Light:</span> <span id="light">-</span></div>
+    <div class="item"><span class="label">Motion:</span> <span id="motion">-</span></div>
+    <div class="item"><span class="label">Temperature:</span> <span id="temperature">- °C</span></div>
+    <div class="item"><span class="label">Humidity:</span> <span id="humidity">- %</span></div>
+    <div class="item"><span class="label">Latitude:</span> <span id="latitude">-</span></div>
+    <div class="item"><span class="label">Longitude:</span> <span id="longitude">-</span></div>
+    <div class="item muted" id="updated"></div>
+  </div>
+
+  <script>
+  async function loadLatest(){
+    try {
+      const r = await fetch('/api/latest', { credentials: 'same-origin' });
+      if (!r.ok) {
+        console.warn('api/latest status', r.status);
+        return;
+      }
+      const j = await r.json();
+      console.log('api/latest json:', j); // <-- debug
+      if (!j.ok || !j.data) return;
+      const d = j.data.parsed;
+
+// latitude & longitude giờ là OBJECT có deg/min/sec/dir
+document.getElementById('light').textContent = d.light;
+document.getElementById('motion').textContent = d.motion;
+document.getElementById('temperature').textContent = d.temperature + ' °C';
+document.getElementById('humidity').textContent = d.humidity + ' %';
+
+const lat = d.latitude;
+const lon = d.longitude;
+document.getElementById('latitude').textContent =
+  `${lat.deg}° ${lat.min}' ${lat.sec}" ${lat.dir}`;
+document.getElementById('longitude').textContent =
+  `${lon.deg}° ${lon.min}' ${lon.sec}" ${lon.dir}`;
+
+
+      // thời gian cập nhật
+      // if (j.data.ts) {
+      //   const dt = new Date(j.data.ts * 1000);
+      //   document.getElementById('updated').textContent = 'Updated: ' + dt.toLocaleString();
+      // }
+    } catch (e) {
+      console.error('loadLatest error:', e);
+    }
+  }
+
+  // gọi ngay + lặp
+  loadLatest();
+  setInterval(loadLatest, 2000);
+  </script>
+</body>
+</html> -->
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>LoRa Sensor Dashboard</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 30px; background: #f2f2f2; }
+    .box { background: white; padding: 20px; border-radius: 8px; max-width: 600px; margin: auto; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+    h1 { text-align: center; }
+    .label { font-weight: bold; width: 140px; display:inline-block; }
+    .item { margin: 10px 0; }
+    .top-right { text-align: right; margin-bottom: 10px; }
+    .muted { color:#777; }
+    .loading::after { content: ' ⏳'; }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <div class="top-right">
+      <a href="/change_password">Đổi mật khẩu</a> |
+      <a href="/logout">Đăng xuất</a>
+    </div>
+    <h1>Bảng điều khiển cảm biến LoRa</h1>
+
+    <div class="item"><span class="label">Ánh sáng:</span> <span id="light">Đang chờ...</span></div>
+    <div class="item"><span class="label">Chuyển động:</span> <span id="motion">Đang chờ...</span></div>
+    <div class="item"><span class="label">Nhiệt độ:</span> <span id="temperature">Đang chờ...</span></div>
+    <div class="item"><span class="label">Độ ẩm:</span> <span id="humidity">Đang chờ...</span></div>
+    <div class="item"><span class="label">Vĩ độ:</span> <span id="latitude">Đang chờ...</span></div>
+    <div class="item"><span class="label">Kinh độ:</span> <span id="longitude">Đang chờ...</span></div>
+    <div class="item muted" id="updated">Đang kết nối...</div>
+  </div>
+
+  <script>
+    function updateIfChanged(id, value) {
+      const element = document.getElementById(id);
+      if (element.textContent !== value) element.textContent = value;
+    }
+
+    function handleData(j) {
+      if (!j.ok || !j.data || !j.data.parsed) {
+        updateIfChanged('updated', 'Không có dữ liệu');
+        return;
+      }
+      const d = j.data.parsed;
+      updateIfChanged('light', d.light ?? 'N/A');
+      updateIfChanged('motion', d.motion ?? 'N/A');
+      updateIfChanged('temperature', d.temperature ? `${d.temperature} °C` : 'N/A');
+      updateIfChanged('humidity', d.humidity ? `${d.humidity} %` : 'N/A');
+      const lat = d.latitude || {};
+      const lon = d.longitude || {};
+      updateIfChanged('latitude', lat.deg ? `${lat.deg}° ${lat.min}' ${lat.sec}" ${lat.dir}` : 'N/A');
+      updateIfChanged('longitude', lon.deg ? `${lon.deg}° ${lon.min}' ${lat.sec}" ${lon.dir}` : 'N/A');
+      if (j.data.ts) {
+        const dt = new Date(j.data.ts * 1000);
+        updateIfChanged('updated', `Cập nhật: ${dt.toLocaleString()}`);
+      } else {
+        updateIfChanged('updated', 'Cập nhật: Không rõ');
+      }
+    }
+
+    const ws = new WebSocket('ws://localhost:8080/ws');
+    ws.onopen = () => {
+      console.log('Kết nối WebSocket');
+      updateIfChanged('updated', 'Đang tải dữ liệu...');
+    };
+    ws.onmessage = (event) => {
+      try {
+        const j = JSON.parse(event.data);
+        console.log('WebSocket data:', j);
+        handleData(j);
+      } catch (e) {
+        console.error('WebSocket parse error:', e);
+        updateIfChanged('updated', 'Lỗi dữ liệu');
+      }
+    };
+    ws.onerror = () => {
+      console.error('WebSocket error');
+      updateIfChanged('updated', 'Lỗi kết nối');
+    };
+    ws.onclose = () => {
+      console.log('WebSocket closed, reconnecting...');
+      updateIfChanged('updated', 'Đang kết nối lại...');
+      setTimeout(() => location.reload(), 5000);
+    };
+  </script>
+</body>
+</html>
